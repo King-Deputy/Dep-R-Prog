@@ -1,0 +1,198 @@
+---
+title: "Logistic Regression of Airline Customer Satisfaction"
+author: 'Alawode Taofik'
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: united
+  pdf_document: default
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+result="asis"
+```
+# **Loading Library**
+Loading the required library
+```{r Loading Library, message=FALSE, warning=FALSE}
+#Load libraries
+library(ggplot2)
+library(dplyr)
+library(caTools)
+library(janitor)
+library(tidyverse)
+library(corrplot)
+library(scales)
+library(ROCR)
+library(magrittr)
+library(reshape2)
+library(tinytex)
+```
+# **Data Importation**
+## Load dataset from local file (Airline Customer Satisfaction)
+The Airline Customer Satisfaction is being read from local file
+```{r Loading Dataset, message=FALSE, warning=FALSE, cache=TRUE}
+cus_sat<-read.csv(file.choose(), header=T, na.strings=c(""))
+```
+## First and Last 5 rows 
+```{r message=FALSE, warning=FALSE}
+# First rows 
+cus_sat%>%head()
+cus_sat%>%tail()
+```
+
+## Attach Data
+Each column are attached to system list for easy accessibility
+```{r message=FALSE, warning=FALSE}
+# attaching
+cus_sat%>%str()
+```
+
+## Missing Values
+Missing values were examined for each numerical variable. Rows containing
+value were omitted
+```{r missing values, message=FALSE, warning=FALSE}
+sapply(cus_sat, function(x) sum(is.na(x)))
+cust_sat<-na.omit(cus_sat)
+sapply(cust_sat, function(x) sum(is.na(x)))
+length(cus_sat$satisfaction)
+attach(cust_sat)
+```
+#Descriptive Statistics
+```{r}
+cust_sat_df<-cust_sat%>%select(satisfaction, Gender,Customer.Type, Class)
+for (x in cust_sat_df)
+  print(table(x))
+cust_sat%>%summarize_if(is.numeric,summary)
+```
+```{r}
+Ordinal<-cust_sat[8:21]
+for(col in Ordinal){
+  print(mean(col))
+}
+opar<-par(mar=c(15,3,1,1))
+mean_ordinal<-c(2.838586, 2.990277,2.852024,2.990277, 3.24916, 3.383745,3.519967,3.472171,3.465143,3.486118,3.69546,3.340729,3.705886, 3.352545)
+colnames<-c("Seat.comfort","Departure.Arrival.time.convenient", "Food.and.drink","Gate.location","Inflight.wifi",
+            "Inflight.entertainment","Online.support","Ease.of.Online.booking","On.board","Leg.room", "Baggage.handling",
+            "Checkin","Cleanliness","Online.boarding")
+barplot(mean_ordinal, names.arg=colnames, col="green", las=2)
+par(opar)
+
+```
+
+```{r}
+#Normalizing Ordinal Variable
+cust_sat[8:21]<-scale(cust_sat[8:21])
+Num_Cus<-data.frame(Flight.Distance,Departure.Delay.in.Minutes, Arrival.Delay.in.Minutes, cust_sat[8:21])
+corval<-round(cor(Num_Cus),2)
+melted_corval <- melt(corval)
+ggplot(data = melted_corval, aes(x=Var1, y=Var2, fill=value)) + 
+  geom_tile()+geom_text(aes(Var2, Var1, label = value), color = "white", size = 2) +
+theme(
+  axis.title.x = element_blank(),
+  axis.title.y = element_blank(),
+  axis.text.x = element_text(angle=90,vjust=0.5,hjust=1),
+  panel.grid.major = element_blank(),
+  panel.border = element_blank(),
+  panel.background = element_blank(),
+  axis.ticks = element_blank(),
+  legend.justification = c(1, 0),
+  legend.position = "topright",
+  legend.direction = "vertical")+
+  guides(fill = guide_colorbar(barwidth = 7, barheight = 1,
+                title.position = "top", title.hjust = 0.5))
+  
+```
+
+```{r}
+#Plot
+opar<-par(mfrow=c(2,2))
+barplot(table(Gender, satisfaction), main="Satisfaction vs Gender",xlab="Satisfaction", col=c("Green","Red"), legend.text=T)
+barplot(table(Customer.Type, satisfaction), main="Satisfaction vs Customer.Type",xlab="Satisfaction", col=c("Blue","Yellow"), legend.text=T)
+barplot(table(Type.of.Travel, satisfaction), main="Satisfaction vs Type.of.Travel",xlab="Satisfaction", col=c("Orange","Pink"), legend.text=T)
+barplot(table(Class, satisfaction), main="Satisfaction vs Class",xlab="Satisfaction", col=c("Blue", "Green", "Red"), legend.text=T)
+par(opar)
+```
+
+```{r}
+library(ggplot2)
+theme_set(
+  theme_classic()+
+    theme(legend.position = "top")
+)
+ggplot(cust_sat, aes(x=Age))+geom_histogram(aes(color=satisfaction, fill=satisfaction),position="identity", bins=15, alpha=0.4)+
+  scale_color_manual(values=c("Blue", "Red"))+
+  scale_fill_manual(values=c("Blue", "Red"))
+```
+
+```{r}
+#Encoding Categorical Variables
+cust_sat$satisfaction<-factor(cust_sat$satisfaction, levels=c("dissatisfied", "satisfied"), labels=c(0,1))
+cust_sat$Gender<-factor(cust_sat$Gender, levels=c("Female", "Male"),labels=c(0,1))
+cust_sat$Customer.Type<-factor(cust_sat$Customer.Type, levels=c("disloyal Customer", "Loyal Customer"), labels=c(0,1))
+cust_sat$Type.of.Travel<-factor(cust_sat$Type.of.Travel, levels=c("Business travel", "Personal Travel"), labels=c(0,1))
+cust_sat$Class<-factor(cust_sat$Class,levels=c("Eco", "Eco Plus", "Business"), labels=c(0,1,2))
+
+```
+
+```{r}
+#Fitting Logistics Regression
+#We have a total of 129487 cases valid with 1 target and 22 features
+#Splitting dataset into training and test set using the 80:20 ratio
+# Splitting dataset
+split <- sample.split(cust_sat, SplitRatio = 0.8)
+split
+   
+train_set <- subset(cust_sat, split == "TRUE")
+test_set <- subset(cust_sat, split == "FALSE")
+
+#Model
+Predictors<-train_set[-1]
+satisfy<-train_set[1]
+mymodel<- glm(satisfaction~., data = train_set, family = "binomial")
+summary(mymodel)
+```
+```{r}
+#OddRatio
+test_set$predictedProb<- predict(mymodel, newdata=test_set[-1], type="response")
+head(test_set)   
+test_set$pred<-ifelse(test_set$predictedProb>0.5,1,0)
+tab<-table(Predicted=test_set$pred, Actual=test_set$satisfaction)
+tab
+```
+
+```{r}
+# ROC-AUC Curve
+ROCPred <- prediction(test_set$pred, test_set$satisfaction) 
+ROCPer <- performance(ROCPred, measure = "tpr", 
+                             x.measure = "fpr")
+   
+auc <- performance(ROCPred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+   
+# Plotting curve
+plot(ROCPer)
+plot(ROCPer, colorize = TRUE, 
+     print.cutoffs.at = seq(0.1, by = 0.1), 
+     main = "ROC CURVE")
+abline(a = 0, b = 1)
+   
+auc <- round(auc, 4)
+legend(.6, .4, auc, title = "AUC", cex = 1)
+```
+
+```{r}
+oddratio<-exp(coef(mymodel)[-1])
+oddratio
+opar<-par(mar=c(15,3,1,1))
+bp<-barplot(oddratio, las=2,
+            col="blue",
+            main="Factors Affecting Customer Satisfaction")
+text(bp,0, round(oddratio,3), cex=0.5, pos=3)
+abline(h=1, lty="dotted")
+par(opar)
+```
+
+
